@@ -1,0 +1,287 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model AgentKnowledge {
+  id        String   @id @default(uuid())
+  doctorId  String
+  agentType String
+  category  String   @default("general")
+  knowledge String
+  source    String?
+  priority  Int      @default(0)
+  createdAt DateTime @default(now())
+  User      User     @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+
+  @@index([doctorId, agentType])
+}
+
+model ChatSession {
+  id        String   @id @default(uuid())
+  doctorId  String
+  patientId String?
+  agentType String
+  messages  Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  User      User     @relation(fields: [doctorId], references: [id])
+  Patient   Patient? @relation(fields: [patientId], references: [id])
+
+  @@index([doctorId])
+  @@index([patientId])
+}
+
+model Diagnosis {
+  id              String        @id @default(uuid())
+  medicalRecordId String
+  code            String?
+  description     String
+  severity        String?
+  diagnosedAt     DateTime
+  createdAt       DateTime      @default(now())
+  MedicalRecord   MedicalRecord @relation(fields: [medicalRecordId], references: [id], onDelete: Cascade)
+
+  @@index([medicalRecordId])
+}
+
+model File {
+  id            String          @id @default(uuid())
+  fileName      String
+  fileType      String
+  fileSize      Int
+  fileUrl       String
+  publicId      String
+  metadata      Json?
+  status        FileStatus      @default(PENDING)
+  patientId     String
+  doctorId      String
+  createdAt     DateTime        @default(now())
+  User          User            @relation(fields: [doctorId], references: [id])
+  Patient       Patient         @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  Inference     Inference[]
+  MedicalRecord MedicalRecord[]
+
+  @@index([doctorId])
+  @@index([patientId])
+}
+
+model Hospital {
+  id                 String             @id @default(uuid())
+  name               String
+  email              String             @unique
+  phone              String?
+  address            String?
+  subscriptionPlan   String             @default("basic")
+  subscriptionStatus SubscriptionStatus @default(TRIAL)
+  billingPhoneNumber String?
+  monthlyFee         Float              @default(5000)
+  trialEndsAt        DateTime?
+  lastPaymentDate    DateTime?
+  nextBillingDate    DateTime?
+  isActive           Boolean            @default(true)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  Patient            Patient[]
+  Payment            Payment[]
+  User               User[]
+
+  @@index([subscriptionStatus])
+}
+
+model Inference {
+  id            String          @id @default(uuid())
+  fileId        String
+  inferenceType String
+  inputData     Json
+  outputData    Json?
+  confidence    Float?
+  status        InferenceStatus @default(PENDING)
+  error         String?
+  doctorId      String?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  User          User?           @relation(fields: [doctorId], references: [id])
+  File          File            @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  @@index([doctorId])
+  @@index([fileId])
+}
+
+model LabResult {
+  id              String        @id @default(uuid())
+  medicalRecordId String
+  testName        String
+  testValue       String
+  unit            String?
+  referenceRange  String?
+  isAbnormal      Boolean       @default(false)
+  performedAt     DateTime
+  createdAt       DateTime      @default(now())
+  MedicalRecord   MedicalRecord @relation(fields: [medicalRecordId], references: [id], onDelete: Cascade)
+
+  @@index([medicalRecordId])
+}
+
+model MedicalRecord {
+  id             String      @id @default(uuid())
+  patientId      String
+  fileId         String
+  recordDate     DateTime
+  recordType     String
+  chiefComplaint String?
+  symptoms       String[]
+  vitalSigns     Json?
+  physicalExam   String?
+  medications    Json?
+  allergies      String[]
+  familyHistory  String?
+  socialHistory  String?
+  notes          String?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  Diagnosis      Diagnosis[]
+  LabResult      LabResult[]
+  File           File        @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  Patient        Patient     @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@index([fileId])
+  @@index([patientId])
+}
+
+model Patient {
+  id                  String          @id @default(uuid())
+  name                String
+  email               String?
+  phone               String?
+  dateOfBirth         DateTime?
+  gender              Gender?
+  medicalRecordNumber String?
+  notes               String?
+  doctorId            String
+  hospitalId          String?
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+  ChatSession         ChatSession[]
+  File                File[]
+  MedicalRecord       MedicalRecord[]
+  Report              Report[]
+  User                User            @relation(fields: [doctorId], references: [id])
+  Hospital            Hospital?       @relation(fields: [hospitalId], references: [id], onDelete: Cascade)
+
+  @@index([doctorId])
+    @@index([hospitalId])
+}
+
+model Report {
+  id              String    @id @default(uuid())
+  patientId       String
+  reportType      String
+  title           String
+  content         Json
+  insights        String[]
+  recommendations String[]
+  riskScore       Decimal?  @db.Decimal(5, 2)
+  generatedBy     String
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  Patient         Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@index([createdAt])
+  @@index([patientId])
+  @@index([reportType])
+}
+
+model Payment {
+  id                 String        @id @default(uuid())
+  hospitalId         String
+  amount             Float
+  phoneNumber        String
+  merchantRequestId  String?
+  checkoutRequestId  String        @unique
+  mpesaReceiptNumber String?       @unique
+  transactionDate    DateTime?
+  status             PaymentStatus @default(PENDING)
+  resultCode         Int?
+  resultDesc         String?
+  billingPeriodStart DateTime?
+  billingPeriodEnd   DateTime?
+  metadata           Json?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+  Hospital           Hospital      @relation(fields: [hospitalId], references: [id], onDelete: Cascade)
+
+  @@index([hospitalId])
+  @@index([status])
+}
+
+model User {
+  id             String           @id @default(uuid())
+  email          String           @unique
+  passwordHash   String
+  name           String
+  role           UserRole         @default(DOCTOR)
+  hospitalId     String?          // Required for HOSPITAL_ADMIN and DOCTOR
+  isActive       Boolean          @default(true)
+  lastLogin      DateTime?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  AgentKnowledge AgentKnowledge[]
+  ChatSession    ChatSession[]
+  File           File[]
+  Inference      Inference[]
+  Patient        Patient[]
+  Hospital       Hospital?        @relation(fields: [hospitalId], references: [id], onDelete: Cascade)
+
+  @@index([hospitalId])
+  @@index([role])
+}
+
+enum FileStatus {
+  PENDING
+  UPLOADED
+  PROCESSING
+  ANALYZED
+  PROCESSED
+  FAILED
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+  PREFER_NOT_TO_SAY
+}
+
+enum InferenceStatus {
+  PENDING
+  COMPLETED
+  FAILED
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  CANCELLED
+  TIMEOUT
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  TRIAL
+  EXPIRED
+  SUSPENDED
+  PENDING_PAYMENT
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  HOSPITAL_ADMIN
+  DOCTOR
+}
